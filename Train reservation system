@@ -1,0 +1,214 @@
+# H2 Database Configuration
+spring.datasource.url=jdbc:h2:mem:testdb
+spring.datasource.driverClassName=org.h2.Driver
+spring.datasource.username=sa
+spring.datasource.password=password
+spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+spring.h2.console.enabled=true
+# MySQL Database Configuration
+spring.datasource.url=jdbc:mysql://localhost:3306/train_reservation
+spring.datasource.username=root
+spring.datasource.password=password
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MySQL8Dialect
+//Step 3: Define Model Classes
+//Train Entity
+
+
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.Table;
+
+@Entity
+@Table(name = "trains")
+public class Train {
+
+    @Id
+    private String trainId;
+    private String trainName;
+    private String fromStation;
+    private String toStation;
+    private String departureTime;
+    private int totalSeats;
+    private int availableSeats;
+
+    // Getters and Setters
+}
+Reservation Entity
+java
+Copy code
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.ManyToOne;
+
+@Entity
+public class Reservation {
+
+    @Id
+    private String reservationId;
+    private String userId;
+    private String trainId;
+    private int seatsReserved;
+
+    @ManyToOne
+    private Train train;
+
+    // Getters and Setters
+}
+User Entity (optional)
+For managing user authentication and reservations.
+
+java
+Copy code
+import javax.persistence.Entity;
+import javax.persistence.Id;
+
+@Entity
+public class User {
+
+    @Id
+    private String userId;
+    private String name;
+    private String email;
+    private String password;
+
+    // Getters and Setters
+}
+Step 4: Create Repository Interfaces
+Use Spring Data JPA to interact with the database.
+
+Train Repository
+java
+Copy code
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface TrainRepository extends JpaRepository<Train, String> {
+    // Custom queries can be added here if necessary
+}
+Reservation Repository
+java
+Copy code
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface ReservationRepository extends JpaRepository<Reservation, String> {
+    // Custom queries can be added here if necessary
+}
+User Repository (if needed)
+java
+Copy code
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface UserRepository extends JpaRepository<User, String> {
+    User findByEmail(String email);
+}
+Step 5: Create Service Layer
+The service layer will contain the business logic.
+
+Train Service
+java
+Copy code
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+@Service
+public class TrainService {
+
+    @Autowired
+    private TrainRepository trainRepository;
+
+    public Train getTrainDetails(String trainId) {
+        return trainRepository.findById(trainId).orElse(null);
+    }
+
+    public Train saveTrain(Train train) {
+        return trainRepository.save(train);
+    }
+
+    public boolean isSeatAvailable(String trainId, int requestedSeats) {
+        Train train = trainRepository.findById(trainId).orElse(null);
+        if (train != null && train.getAvailableSeats() >= requestedSeats) {
+            return true;
+        }
+        return false;
+    }
+}
+Reservation Service
+java
+Copy code
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+@Service
+public class ReservationService {
+
+    @Autowired
+    private ReservationRepository reservationRepository;
+
+    @Autowired
+    private TrainService trainService;
+
+    public Reservation createReservation(String userId, String trainId, int seats) {
+        if (trainService.isSeatAvailable(trainId, seats)) {
+            Reservation reservation = new Reservation();
+            reservation.setReservationId("R" + System.currentTimeMillis()); // Generate unique ID
+            reservation.setUserId(userId);
+            reservation.setTrainId(trainId);
+            reservation.setSeatsReserved(seats);
+
+            // Update available seats in Train
+            Train train = trainService.getTrainDetails(trainId);
+            train.setAvailableSeats(train.getAvailableSeats() - seats);
+
+            // Save the reservation
+            reservationRepository.save(reservation);
+            return reservation;
+        }
+        return null; // No available seats
+    }
+}
+Step 6: Create Controller Layer
+The controller handles HTTP requests and communicates with the service layer.
+
+java
+Copy code
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api")
+public class TrainController {
+
+    @Autowired
+    private TrainService trainService;
+
+    @Autowired
+    private ReservationService reservationService;
+
+    // View available trains
+    @GetMapping("/trains")
+    public List<Train> getAllTrains() {
+        return trainService.getAllTrains();
+    }
+
+    // View a specific train
+    @GetMapping("/trains/{trainId}")
+    public Train getTrain(@PathVariable String trainId) {
+        return trainService.getTrainDetails(trainId);
+    }
+
+    // Reserve a seat
+    @PostMapping("/reserve")
+    public Reservation makeReservation(@RequestBody ReservationRequest request) {
+        return reservationService.createReservation(request.getUserId(), request.getTrainId(), request.getSeats());
+    }
+}
+
+class ReservationRequest {
+    private String userId;
+    private String trainId;
+    private int seats;
+
+    // Getters and Setters
+}
